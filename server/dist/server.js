@@ -81371,7 +81371,6 @@ function updateSwapStatus(swapId, status, data = {}) {
 app.post("/tx/send", async (req, res) => {
   try {
     const { tx } = req.body;
-    console.log(tx);
     const sig = await connection.sendRawTransaction(VersionedTransaction.deserialize(Buffer.from(tx, "base64")).serialize());
     await connection.confirmTransaction(sig);
     return res.send(sig);
