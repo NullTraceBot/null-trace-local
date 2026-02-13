@@ -35,7 +35,7 @@ __export(src_exports, {
 });
 module.exports = __toCommonJS(src_exports);
 var import_web3 = require("@solana/web3.js");
-var import_spl_token = require("@solana/spl-token");
+var splToken = __toESM(require("@solana/spl-token"), 1);
 var import_stateless = require("@lightprotocol/stateless.js");
 var import_compressed_token = require("@lightprotocol/compressed-token");
 var import_bs58 = __toESM(require("bs58"), 1);
@@ -550,6 +550,7 @@ var LimitOrders = class {
 };
 
 // src/index.js
+var { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
 var OPERATOR_KEY = "5STUuhrL8kJ4up9spEY39VJ6ibQCFrg8x8cRV5UeEcfv";
 var OPERATOR_PUBLIC_KEY = new import_web3.PublicKey(OPERATOR_KEY);
 var ALT_ADDRESS = new import_web3.PublicKey("9NYFyEqPkyXUhkerbGHXUXkvb4qpzeEdHuGpgbgpH1NJ");
@@ -588,8 +589,8 @@ function _sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 async function _getMintInfo(connection, mintAddress) {
-  if (mintAddress === import_spl_token.NATIVE_MINT.toBase58()) {
-    return { decimals: 9, tokenProgram: import_spl_token.TOKEN_PROGRAM_ID };
+  if (mintAddress === NATIVE_MINT.toBase58()) {
+    return { decimals: 9, tokenProgram: TOKEN_PROGRAM_ID };
   }
   const mintInfo = await connection.getParsedAccountInfo(new import_web3.PublicKey(mintAddress));
   if (!mintInfo.value)
@@ -890,7 +891,7 @@ var NullTrace = class _NullTrace {
     if (!mint || !amount)
       throw new Error("NullTrace.nullify: mint and amount are required");
     const owner = this.wallet.publicKey;
-    const isSOL = mint === import_spl_token.NATIVE_MINT.toBase58();
+    const isSOL = mint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, mint);
     const amountLamports = (0, import_stateless.bn)(Math.floor(parseFloat(amount) * 10 ** decimals).toString());
     const feeLamports = (0, import_stateless.bn)(Math.floor(parseInt(amountLamports.toString()) * FEE_BPS).toString());
@@ -914,7 +915,7 @@ var NullTrace = class _NullTrace {
       );
     } else {
       const mintPk = new import_web3.PublicKey(mint);
-      const sourceAta = await (0, import_spl_token.getAssociatedTokenAddress)(mintPk, owner, false, tokenProgram);
+      const sourceAta = await splToken.getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
       const [tokenPoolPda] = import_web3.PublicKey.findProgramAddressSync(
         [Buffer.from("pool"), mintPk.toBuffer()],
         import_stateless.COMPRESSED_TOKEN_PROGRAM_ID
@@ -970,7 +971,7 @@ var NullTrace = class _NullTrace {
     if (!mint || !amount)
       throw new Error("NullTrace.reveal: mint and amount are required");
     const owner = this.wallet.publicKey;
-    const isSOL = mint === import_spl_token.NATIVE_MINT.toBase58();
+    const isSOL = mint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, mint);
     const amountLamports = Math.floor(parseFloat(amount) * 10 ** decimals);
     const sorted = await _getCompressedAccounts(this.connection, owner, mint, isSOL);
@@ -984,10 +985,10 @@ var NullTrace = class _NullTrace {
     if (!isSOL) {
       const tokenPoolInfos = await (0, import_compressed_token.getTokenPoolInfos)(this.connection, new import_web3.PublicKey(mint));
       selectedTokenPoolInfos = (0, import_compressed_token.selectTokenPoolInfosForDecompression)(tokenPoolInfos, amountLamports);
-      destinationAta = await (0, import_spl_token.getAssociatedTokenAddress)(new import_web3.PublicKey(mint), owner, false, tokenProgram);
+      destinationAta = await splToken.getAssociatedTokenAddress(new import_web3.PublicKey(mint), owner, false, tokenProgram);
       const info = await this.connection.getAccountInfo(destinationAta);
       if (!info) {
-        ixs.push((0, import_spl_token.createAssociatedTokenAccountInstruction)(owner, destinationAta, owner, new import_web3.PublicKey(mint), tokenProgram));
+        ixs.push(splToken.createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new import_web3.PublicKey(mint), tokenProgram));
       }
     }
     let remaining = amountLamports;
@@ -1044,7 +1045,7 @@ var NullTrace = class _NullTrace {
     }
     const owner = this.wallet.publicKey;
     const recipientPk = new import_web3.PublicKey(recipient);
-    const isSOL = mint === import_spl_token.NATIVE_MINT.toBase58();
+    const isSOL = mint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, mint);
     const amountLamports = Math.floor(parseFloat(amount) * 10 ** decimals);
     const sorted = await _getCompressedAccounts(this.connection, owner, mint, isSOL);
@@ -1089,7 +1090,7 @@ var NullTrace = class _NullTrace {
           import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
           import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
-        const sourceAta = await (0, import_spl_token.getAssociatedTokenAddress)(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new import_web3.PublicKey(mint),
           owner,
           false,
@@ -1234,7 +1235,7 @@ var NullTrace = class _NullTrace {
     }
     const { onStatusChange, timeout = 12e4 } = options;
     const owner = this.wallet.publicKey;
-    const isSOL = fromMint === import_spl_token.NATIVE_MINT.toBase58();
+    const isSOL = fromMint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, fromMint);
     const amountLamports = Math.floor(parseFloat(amount) * 10 ** decimals);
     const sorted = await _getCompressedAccounts(this.connection, owner, fromMint, isSOL);
@@ -1272,7 +1273,7 @@ var NullTrace = class _NullTrace {
           import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
           import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
-        const sourceAta = await (0, import_spl_token.getAssociatedTokenAddress)(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new import_web3.PublicKey(fromMint),
           owner,
           false,
@@ -1440,12 +1441,12 @@ var NullTrace = class _NullTrace {
         lamports: solBal - 0.01 * 1e9,
         decimals: 9,
         logo: "",
-        address: import_spl_token.NATIVE_MINT.toString()
+        address: NATIVE_MINT.toString()
       });
     }
     const [spl, spl22] = await Promise.all([
-      this.connection.getParsedTokenAccountsByOwner(owner, { programId: import_spl_token.TOKEN_PROGRAM_ID }, "processed"),
-      this.connection.getParsedTokenAccountsByOwner(owner, { programId: import_spl_token.TOKEN_2022_PROGRAM_ID }, "processed")
+      this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, "processed"),
+      this.connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }, "processed")
     ]);
     for (const ta of [...spl.value, ...spl22.value]) {
       const p = ta.account.data.parsed;
@@ -1489,7 +1490,7 @@ var NullTrace = class _NullTrace {
         lamports: parseInt(compressedSol.toString()),
         decimals: 9,
         logo: "",
-        address: import_spl_token.NATIVE_MINT.toString()
+        address: NATIVE_MINT.toString()
       });
     }
     const compressedTokens = await this.connection.getCompressedTokenAccountsByOwner(owner);
@@ -1539,7 +1540,7 @@ var NullTrace = class _NullTrace {
   async getTokenMetadata(mint) {
     if (!mint)
       throw new Error("NullTrace.getTokenMetadata: mint is required");
-    if (mint === import_spl_token.NATIVE_MINT.toBase58()) {
+    if (mint === NATIVE_MINT.toBase58()) {
       return { symbol: "SOL", name: "Solana", logo: "", decimals: 9 };
     }
     const result = [{ address: mint, symbol: "", name: "", logo: "", decimals: 0, lamports: 0 }];

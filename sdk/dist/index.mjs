@@ -7,14 +7,7 @@ import {
   Keypair,
   Connection
 } from "@solana/web3.js";
-import {
-  TOKEN_PROGRAM_ID,
-  TOKEN_2022_PROGRAM_ID,
-  getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
-  createTransferCheckedInstruction,
-  NATIVE_MINT
-} from "@solana/spl-token";
+import * as splToken from "@solana/spl-token";
 import {
   createRpc,
   bn,
@@ -539,6 +532,7 @@ var LimitOrders = class {
 };
 
 // src/index.js
+var { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
 var OPERATOR_KEY = "5STUuhrL8kJ4up9spEY39VJ6ibQCFrg8x8cRV5UeEcfv";
 var OPERATOR_PUBLIC_KEY = new PublicKey(OPERATOR_KEY);
 var ALT_ADDRESS = new PublicKey("9NYFyEqPkyXUhkerbGHXUXkvb4qpzeEdHuGpgbgpH1NJ");
@@ -903,7 +897,7 @@ var NullTrace = class _NullTrace {
       );
     } else {
       const mintPk = new PublicKey(mint);
-      const sourceAta = await getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
+      const sourceAta = await splToken.getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
       const [tokenPoolPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("pool"), mintPk.toBuffer()],
         COMPRESSED_TOKEN_PROGRAM_ID
@@ -973,10 +967,10 @@ var NullTrace = class _NullTrace {
     if (!isSOL) {
       const tokenPoolInfos = await getTokenPoolInfos(this.connection, new PublicKey(mint));
       selectedTokenPoolInfos = selectTokenPoolInfosForDecompression(tokenPoolInfos, amountLamports);
-      destinationAta = await getAssociatedTokenAddress(new PublicKey(mint), owner, false, tokenProgram);
+      destinationAta = await splToken.getAssociatedTokenAddress(new PublicKey(mint), owner, false, tokenProgram);
       const info = await this.connection.getAccountInfo(destinationAta);
       if (!info) {
-        ixs.push(createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new PublicKey(mint), tokenProgram));
+        ixs.push(splToken.createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new PublicKey(mint), tokenProgram));
       }
     }
     let remaining = amountLamports;
@@ -1078,7 +1072,7 @@ var NullTrace = class _NullTrace {
           ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
           ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
-        const sourceAta = await getAssociatedTokenAddress(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new PublicKey(mint),
           owner,
           false,
@@ -1261,7 +1255,7 @@ var NullTrace = class _NullTrace {
           ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
           ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
-        const sourceAta = await getAssociatedTokenAddress(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new PublicKey(fromMint),
           owner,
           false,
