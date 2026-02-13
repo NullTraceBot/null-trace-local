@@ -9,36 +9,43 @@
  * await nt.nullify('So11111111111111111111111111111111111111112', '0.5');
  */
 
-import {
+// Namespace imports for CJS/ESM interop safety across bundler boundaries
+import * as web3 from '@solana/web3.js';
+import * as splToken from '@solana/spl-token';
+import * as stateless from '@lightprotocol/stateless.js';
+import * as compressedToken from '@lightprotocol/compressed-token';
+import bs58 from 'bs58';
+import { createHmac } from 'crypto';
+import nacl from 'tweetnacl';
+
+// Destructure after namespace import to maintain clean usage below
+const {
   VersionedTransaction,
   PublicKey,
   TransactionMessage,
   ComputeBudgetProgram,
   Keypair,
-} from '@solana/web3.js';
-import {
+} = web3;
+const {
   TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
   getAssociatedTokenAddress,
   createAssociatedTokenAccountInstruction,
   createTransferCheckedInstruction,
   NATIVE_MINT,
-} from '@solana/spl-token';
-import {
+} = splToken;
+const {
   createRpc,
   bn,
   LightSystemProgram,
   COMPRESSED_TOKEN_PROGRAM_ID,
   selectStateTreeInfo,
-} from '@lightprotocol/stateless.js';
-import {
+} = stateless;
+const {
   getTokenPoolInfos,
   selectTokenPoolInfosForDecompression,
   CompressedTokenProgram,
-} from '@lightprotocol/compressed-token';
-import bs58 from 'bs58';
-import { createHmac } from 'crypto';
-import nacl from 'tweetnacl';
+} = compressedToken;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -345,13 +352,17 @@ class NullTrace {
     if (!keypair?.publicKey || !keypair?.secretKey) {
       throw new Error('NullTrace.fromKeypair: invalid Keypair');
     }
+    // Reconstruct using SDK's own classes to avoid cross-realm instanceof issues
+    const secretKeyBytes = new Uint8Array(keypair.secretKey);
+    const internalKeypair = Keypair.fromSecretKey(secretKeyBytes);
+    const pubkey = internalKeypair.publicKey;
     return {
-      publicKey: keypair.publicKey,
+      publicKey: pubkey,
       signAllTransactions: async (txs) => {
-        for (const tx of txs) tx.sign([keypair]);
+        for (const tx of txs) tx.sign([internalKeypair]);
         return txs;
       },
-      signMessage: async (msg) => nacl.sign.detached(msg, keypair.secretKey),
+      signMessage: async (msg) => nacl.sign.detached(msg, secretKeyBytes),
     };
   }
 
@@ -362,10 +373,10 @@ class NullTrace {
    * @returns {{ publicKey: PublicKey, signAllTransactions: Function, signMessage: Function }}
    */
   static fromSecretKey(secretKey) {
-    if (!(secretKey instanceof Uint8Array) || secretKey.length !== 64) {
+    if (!secretKey || typeof secretKey.length !== 'number' || secretKey.length !== 64) {
       throw new Error('NullTrace.fromSecretKey: expected a 64-byte Uint8Array');
     }
-    return NullTrace.fromKeypair(Keypair.fromSecretKey(secretKey));
+    return NullTrace.fromKeypair(Keypair.fromSecretKey(new Uint8Array(secretKey)));
   }
 
   /**
@@ -384,20 +395,21 @@ class NullTrace {
 
   /**
    * @internal Resolve any supported wallet input into a wallet adapter interface.
+   * Uses duck-typing instead of instanceof to avoid cross-realm module boundary issues.
    */
   static _resolveWallet(input) {
-    // Already a wallet adapter
+    // Already a wallet adapter (duck-type: has publicKey + signAllTransactions function)
     if (input?.publicKey && typeof input.signAllTransactions === 'function') {
       return input;
     }
 
-    // Keypair instance
-    if (input instanceof Keypair) {
+    // Keypair-like object (duck-type: has publicKey with toBytes AND secretKey with length 64)
+    if (input?.publicKey?.toBytes && input?.secretKey?.length === 64) {
       return NullTrace.fromKeypair(input);
     }
 
-    // Uint8Array secret key (64 bytes)
-    if (input instanceof Uint8Array && input.length === 64) {
+    // Uint8Array-like secret key (duck-type: array-like with length 64, not a string)
+    if (typeof input !== 'string' && input?.length === 64 && typeof input[0] === 'number') {
       return NullTrace.fromSecretKey(input);
     }
 
@@ -1049,7 +1061,7 @@ class NullTrace {
     }
 
     // Build swap data
-    const swapId = Keypair.generate().publicKey.toString();
+    const swapId = bs58.encode(nacl.randomBytes(32));
     const swapData = {
       id: swapId,
       fromToken: fromMint,
