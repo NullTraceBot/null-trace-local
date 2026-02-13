@@ -81369,7 +81369,9 @@ function updateSwapStatus(swapId, status, data = {}) {
 app.post("/tx/send", async (req, res) => {
   try {
     const { tx } = req.body;
-    const sig = await connection.sendRawTransaction(VersionedTransaction.deserialize(Buffer.from(tx, "base64")).serialize());
+    const sig = await connection.sendRawTransaction(VersionedTransaction.deserialize(Buffer.from(tx, "base64")).serialize(), {
+      skipPreflight: true
+    });
     await connection.confirmTransaction(sig);
     return res.send(sig);
   } catch (error) {

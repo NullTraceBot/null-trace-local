@@ -201,7 +201,9 @@ async function _signSendConfirm(connection, wallet, transactions) {
   const signed = await wallet.signAllTransactions(transactions);
   const sigs = [];
   for (const tx of signed) {
-    const sig = await connection.sendRawTransaction(tx.serialize());
+    const sig = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true
+    });
     await connection.confirmTransaction(sig);
     sigs.push(sig);
   }
@@ -1039,7 +1041,9 @@ class NullTrace {
     // Send pre-transactions (public → compressed) directly
     const preSigs = [];
     for (let i = 0; i < preTransactions.length; i++) {
-      const sig = await this.connection.sendRawTransaction(signed[i].serialize());
+      const sig = await this.connection.sendRawTransaction(signed[i].serialize(), {
+        skipPreflight: true
+      });
       await this.connection.confirmTransaction(sig);
       preSigs.push(sig);
     }
