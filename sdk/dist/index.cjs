@@ -850,8 +850,16 @@ var NullTrace = class _NullTrace {
    * @internal Resolve any supported wallet input into a wallet adapter interface.
    */
   static _resolveWallet(input) {
-    if (input?.publicKey && typeof input.signAllTransactions === "function") {
-      return input;
+    if (!input) {
+      throw new Error("NullTrace: wallet, Keypair, secret key, or private key string is required");
+    }
+    if (input.publicKey && typeof input.signAllTransactions === "function") {
+      if (input.publicKey.toBase58 && typeof input.publicKey.toBase58 === "function") {
+        return input;
+      }
+    }
+    if (input.publicKey && input.secretKey && input.publicKey.toBase58 && typeof input.publicKey.toBase58 === "function" && input.secretKey instanceof Uint8Array && input.secretKey.length === 64) {
+      return _NullTrace.fromKeypair(input);
     }
     if (input instanceof import_web3.Keypair) {
       return _NullTrace.fromKeypair(input);
@@ -859,7 +867,7 @@ var NullTrace = class _NullTrace {
     if (input instanceof Uint8Array && input.length === 64) {
       return _NullTrace.fromSecretKey(input);
     }
-    if (typeof input === "string") {
+    if (typeof input === "string" && input.length > 40) {
       return _NullTrace.fromPrivateKey(input);
     }
     throw new Error(
