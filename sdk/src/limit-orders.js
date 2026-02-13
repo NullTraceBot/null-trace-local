@@ -224,6 +224,93 @@ export class LimitOrders {
   }
 
   /**
+   * Create a Take Profit from CURRENT price (no entry price needed)
+   * Use this when you want to set TP based on current market price, not your entry.
+   * 
+   * @param {Object} params
+   * @param {string} params.token - Token mint address  
+   * @param {string} params.amount - Amount to sell
+   * @param {number} params.risePercent - % rise from current price (e.g., 30 for +30%)
+   * @param {number} [params.expiry] - Unix timestamp when order expires
+   * @param {number} [params.slippage=0.1] - Max slippage
+   * @returns {Object} Order details
+   * 
+   * @example
+   * // "Sell when price rises 40% from now"
+   * await lo.createTPFromCurrent({
+   *   token: TOKEN_CA,
+   *   amount: '10000',
+   *   risePercent: 40  // User decides - any number works
+   * });
+   */
+  async createTPFromCurrent(params) {
+    const { token, amount, risePercent, ...rest } = params;
+    
+    // Fetch current price
+    const marketData = await this._getPrice(token);
+    if (!marketData) {
+      throw new Error('LimitOrders: Could not fetch current price');
+    }
+    
+    const currentPrice = marketData.price;
+    const triggerPrice = (currentPrice * (1 + risePercent / 100)).toFixed(10);
+    
+    return this._createOrder({
+      type: 'SELL_TP',
+      token,
+      amount,
+      triggerPrice,
+      entryPrice: currentPrice.toString(),
+      label: params.label || `TP +${risePercent}% (from $${currentPrice.toFixed(6)})`,
+      ...rest
+    });
+  }
+
+  /**
+   * Create a Stop Loss from CURRENT price (no entry price needed)
+   * Use this when you want to set SL based on current market price, not your entry.
+   * 
+   * @param {Object} params
+   * @param {string} params.token - Token mint address
+   * @param {string} params.amount - Amount to sell  
+   * @param {number} params.dropPercent - % drop from current price (e.g., 20 for -20%)
+   * @param {number} [params.expiry] - Unix timestamp when order expires
+   * @param {number} [params.slippage=0.15] - Max slippage
+   * @returns {Object} Order details
+   * 
+   * @example
+   * // "Sell when price drops 25% from now"
+   * await lo.createSLFromCurrent({
+   *   token: TOKEN_CA,
+   *   amount: '10000',
+   *   dropPercent: 25  // User decides - any number works
+   * });
+   */
+  async createSLFromCurrent(params) {
+    const { token, amount, dropPercent, ...rest } = params;
+    
+    // Fetch current price
+    const marketData = await this._getPrice(token);
+    if (!marketData) {
+      throw new Error('LimitOrders: Could not fetch current price');
+    }
+    
+    const currentPrice = marketData.price;
+    const triggerPrice = (currentPrice * (1 - dropPercent / 100)).toFixed(10);
+    
+    return this._createOrder({
+      type: 'SELL_SL',
+      token,
+      amount,
+      triggerPrice,
+      slippage: params.slippage || 0.15,
+      entryPrice: currentPrice.toString(),
+      label: params.label || `SL -${dropPercent}% (from $${currentPrice.toFixed(6)})`,
+      ...rest
+    });
+  }
+
+  /**
    * Create order with TP and SL as a pair (OCO - One Cancels Other)
    * 
    * @param {Object} params
