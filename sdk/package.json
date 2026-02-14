@@ -1,6 +1,6 @@
 {
   "name": "nulltrace-sdk",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "description": "NullTrace SDK - Privacy-focused Solana transactions powered by ZK compression",
   "author": "NullTrace",
   "license": "MIT",

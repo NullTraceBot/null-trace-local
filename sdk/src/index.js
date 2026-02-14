@@ -14,7 +14,8 @@ import * as web3 from '@solana/web3.js';
 import * as splToken from '@solana/spl-token';
 import * as stateless from '@lightprotocol/stateless.js';
 import * as compressedToken from '@lightprotocol/compressed-token';
-import bs58 from 'bs58';
+import bs58Module from 'bs58';
+const bs58 = bs58Module.default ?? bs58Module;
 import { createHmac } from 'crypto';
 import nacl from 'tweetnacl';
 
