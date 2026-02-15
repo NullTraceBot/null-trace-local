@@ -26,16 +26,11 @@ const {
   TransactionMessage,
   ComputeBudgetProgram,
   Keypair,
-} = web3;
-const {
-  TOKEN_PROGRAM_ID,
-  TOKEN_2022_PROGRAM_ID,
-  getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
-  createTransferCheckedInstruction,
-  NATIVE_MINT,
-} = splToken;
-const {
+  Connection,
+} from '@solana/web3.js';
+import * as splToken from '@solana/spl-token';
+const { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
+import {
   createRpc,
   bn,
   LightSystemProgram,
@@ -331,7 +326,15 @@ class NullTrace {
 
     this.rpcUrl = rpcUrl;
     this.wallet = NullTrace._resolveWallet(walletOrKey);
+    
+    // For ZK operations (proofs, compressed account queries)
     this.connection = createRpc(rpcUrl, rpcUrl, rpcUrl, { commitment: 'processed' });
+    
+    // For sending transactions with skipPreflight: true (fixes Helius preflight issue)
+    this.sendConnection = new Connection(rpcUrl, {
+      commitment: 'confirmed',
+      confirmTransactionInitialTimeout: 60000
+    });
 
     /** @internal */
     this._adlCache = null;
@@ -399,13 +402,29 @@ class NullTrace {
    * Uses duck-typing instead of instanceof to avoid cross-realm module boundary issues.
    */
   static _resolveWallet(input) {
-    // Already a wallet adapter (duck-type: has publicKey + signAllTransactions function)
-    if (input?.publicKey && typeof input.signAllTransactions === 'function') {
-      return input;
+    // Guard: null or undefined
+    if (!input) {
+      throw new Error('NullTrace: wallet, Keypair, secret key, or private key string is required');
     }
 
-    // Keypair-like object (duck-type: has publicKey with toBytes AND secretKey with length 64)
-    if (input?.publicKey?.toBytes && input?.secretKey?.length === 64) {
+    // Already a wallet adapter (duck-type check)
+    if (input.publicKey && typeof input.signAllTransactions === 'function') {
+      // Validate publicKey is a real PublicKey
+      if (input.publicKey.toBase58 && typeof input.publicKey.toBase58 === 'function') {
+        return input;
+      }
+    }
+
+    // Duck-type Keypair (cross-module boundary safe)
+    // Checks for the shape: { publicKey: PublicKey, secretKey: Uint8Array(64) }
+    if (input.publicKey && input.secretKey && 
+        input.publicKey.toBase58 && typeof input.publicKey.toBase58 === 'function' &&
+        input.secretKey instanceof Uint8Array && input.secretKey.length === 64) {
+      return NullTrace.fromKeypair(input);
+    }
+
+    // Fallback: instanceof check (may fail across module boundaries)
+    if (input instanceof Keypair) {
       return NullTrace.fromKeypair(input);
     }
 
@@ -415,7 +434,7 @@ class NullTrace {
     }
 
     // Base58 private key string
-    if (typeof input === 'string') {
+    if (typeof input === 'string' && input.length > 40) {
       return NullTrace.fromPrivateKey(input);
     }
 
@@ -476,7 +495,7 @@ class NullTrace {
       );
     } else {
       const mintPk = new PublicKey(mint);
-      const sourceAta = await getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
+      const sourceAta = await splToken.getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
       const [tokenPoolPda] = PublicKey.findProgramAddressSync(
         [Buffer.from('pool'), mintPk.toBuffer()],
         COMPRESSED_TOKEN_PROGRAM_ID
@@ -563,10 +582,10 @@ class NullTrace {
     if (!isSOL) {
       const tokenPoolInfos = await getTokenPoolInfos(this.connection, new PublicKey(mint));
       selectedTokenPoolInfos = selectTokenPoolInfosForDecompression(tokenPoolInfos, amountLamports);
-      destinationAta = await getAssociatedTokenAddress(new PublicKey(mint), owner, false, tokenProgram);
+      destinationAta = await splToken.getAssociatedTokenAddress(new PublicKey(mint), owner, false, tokenProgram);
       const info = await this.connection.getAccountInfo(destinationAta);
       if (!info) {
-        ixs.push(createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new PublicKey(mint), tokenProgram));
+        ixs.push(splToken.createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new PublicKey(mint), tokenProgram));
       }
     }
 
@@ -684,7 +703,7 @@ class NullTrace {
           ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
         ];
 
-        const sourceAta = await getAssociatedTokenAddress(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new PublicKey(mint),
           owner,
           false,
@@ -913,7 +932,7 @@ class NullTrace {
           ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
         ];
         
-        const sourceAta = await getAssociatedTokenAddress(
+        const sourceAta = await splToken.getAssociatedTokenAddress(
           new PublicKey(fromMint),
           owner,
           false,
@@ -1052,12 +1071,15 @@ class NullTrace {
     });
 
     // Send pre-transactions (public → compressed) directly
+    // FIXED: Use sendConnection with skipPreflight to avoid Helius preflight simulation errors
     const preSigs = [];
     for (let i = 0; i < preTransactions.length; i++) {
-      const sig = await this.connection.sendRawTransaction(signed[i].serialize(), {
-        skipPreflight: true
+      const sig = await this.sendConnection.sendRawTransaction(signed[i].serialize(), {
+        skipPreflight: true,
+        maxRetries: 5,
+        preflightCommitment: 'confirmed'
       });
-      await this.connection.confirmTransaction(sig);
+      await this.sendConnection.confirmTransaction(sig, 'confirmed');
       preSigs.push(sig);
     }
 
@@ -1250,3 +1272,6 @@ class NullTrace {
 
 export { NullTrace };
 export default NullTrace;
+
+// Limit Orders Extension
+export { LimitOrders } from './limit-orders.js';
