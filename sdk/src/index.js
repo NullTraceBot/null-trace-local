@@ -27,10 +27,9 @@ const {
   ComputeBudgetProgram,
   Keypair,
   Connection,
-} from '@solana/web3.js';
-import * as splToken from '@solana/spl-token';
+} = web3;
 const { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
-import {
+const {
   createRpc,
   bn,
   LightSystemProgram,

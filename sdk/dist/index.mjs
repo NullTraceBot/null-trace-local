@@ -1,26 +1,9 @@
 // src/index.js
-import {
-  VersionedTransaction,
-  PublicKey,
-  TransactionMessage,
-  ComputeBudgetProgram,
-  Keypair,
-  Connection
-} from "@solana/web3.js";
+import * as web3 from "@solana/web3.js";
 import * as splToken from "@solana/spl-token";
-import {
-  createRpc,
-  bn,
-  LightSystemProgram,
-  COMPRESSED_TOKEN_PROGRAM_ID,
-  selectStateTreeInfo
-} from "@lightprotocol/stateless.js";
-import {
-  getTokenPoolInfos,
-  selectTokenPoolInfosForDecompression,
-  CompressedTokenProgram
-} from "@lightprotocol/compressed-token";
-import bs58 from "bs58";
+import * as stateless from "@lightprotocol/stateless.js";
+import * as compressedToken from "@lightprotocol/compressed-token";
+import bs58Module from "bs58";
 import { createHmac } from "crypto";
 import nacl from "tweetnacl";
 
@@ -532,7 +515,28 @@ var LimitOrders = class {
 };
 
 // src/index.js
+var bs58 = bs58Module.default ?? bs58Module;
+var {
+  VersionedTransaction,
+  PublicKey,
+  TransactionMessage,
+  ComputeBudgetProgram,
+  Keypair,
+  Connection
+} = web3;
 var { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
+var {
+  createRpc,
+  bn,
+  LightSystemProgram,
+  COMPRESSED_TOKEN_PROGRAM_ID,
+  selectStateTreeInfo
+} = stateless;
+var {
+  getTokenPoolInfos,
+  selectTokenPoolInfosForDecompression,
+  CompressedTokenProgram
+} = compressedToken;
 var OPERATOR_KEY = "5STUuhrL8kJ4up9spEY39VJ6ibQCFrg8x8cRV5UeEcfv";
 var OPERATOR_PUBLIC_KEY = new PublicKey(OPERATOR_KEY);
 var ALT_ADDRESS = new PublicKey("9NYFyEqPkyXUhkerbGHXUXkvb4qpzeEdHuGpgbgpH1NJ");
@@ -659,7 +663,9 @@ async function _signSendConfirm(connection, wallet, transactions) {
   const signed = await wallet.signAllTransactions(transactions);
   const sigs = [];
   for (const tx of signed) {
-    const sig = await connection.sendRawTransaction(tx.serialize());
+    const sig = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true
+    });
     await connection.confirmTransaction(sig);
     sigs.push(sig);
   }
@@ -793,14 +799,17 @@ var NullTrace = class _NullTrace {
     if (!keypair?.publicKey || !keypair?.secretKey) {
       throw new Error("NullTrace.fromKeypair: invalid Keypair");
     }
+    const secretKeyBytes = new Uint8Array(keypair.secretKey);
+    const internalKeypair = Keypair.fromSecretKey(secretKeyBytes);
+    const pubkey = internalKeypair.publicKey;
     return {
-      publicKey: keypair.publicKey,
+      publicKey: pubkey,
       signAllTransactions: async (txs) => {
         for (const tx of txs)
-          tx.sign([keypair]);
+          tx.sign([internalKeypair]);
         return txs;
       },
-      signMessage: async (msg) => nacl.sign.detached(msg, keypair.secretKey)
+      signMessage: async (msg) => nacl.sign.detached(msg, secretKeyBytes)
     };
   }
   /**
@@ -810,10 +819,10 @@ var NullTrace = class _NullTrace {
    * @returns {{ publicKey: PublicKey, signAllTransactions: Function, signMessage: Function }}
    */
   static fromSecretKey(secretKey) {
-    if (!(secretKey instanceof Uint8Array) || secretKey.length !== 64) {
+    if (!secretKey || typeof secretKey.length !== "number" || secretKey.length !== 64) {
       throw new Error("NullTrace.fromSecretKey: expected a 64-byte Uint8Array");
     }
-    return _NullTrace.fromKeypair(Keypair.fromSecretKey(secretKey));
+    return _NullTrace.fromKeypair(Keypair.fromSecretKey(new Uint8Array(secretKey)));
   }
   /**
    * Create a wallet adapter interface from a base58-encoded private key string.
@@ -830,6 +839,7 @@ var NullTrace = class _NullTrace {
   }
   /**
    * @internal Resolve any supported wallet input into a wallet adapter interface.
+   * Uses duck-typing instead of instanceof to avoid cross-realm module boundary issues.
    */
   static _resolveWallet(input) {
     if (!input) {
@@ -846,7 +856,7 @@ var NullTrace = class _NullTrace {
     if (input instanceof Keypair) {
       return _NullTrace.fromKeypair(input);
     }
-    if (input instanceof Uint8Array && input.length === 64) {
+    if (typeof input !== "string" && input?.length === 64 && typeof input[0] === "number") {
       return _NullTrace.fromSecretKey(input);
     }
     if (typeof input === "string" && input.length > 40) {
@@ -1369,7 +1379,7 @@ var NullTrace = class _NullTrace {
       await this.sendConnection.confirmTransaction(sig, "confirmed");
       preSigs.push(sig);
     }
-    const swapId = Keypair.generate().publicKey.toString();
+    const swapId = bs58.encode(nacl.randomBytes(32));
     const swapData = {
       id: swapId,
       fromToken: fromMint,

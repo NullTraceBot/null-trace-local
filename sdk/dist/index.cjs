@@ -34,10 +34,10 @@ __export(src_exports, {
   default: () => src_default
 });
 module.exports = __toCommonJS(src_exports);
-var import_web3 = require("@solana/web3.js");
+var web3 = __toESM(require("@solana/web3.js"), 1);
 var splToken = __toESM(require("@solana/spl-token"), 1);
-var import_stateless = require("@lightprotocol/stateless.js");
-var import_compressed_token = require("@lightprotocol/compressed-token");
+var stateless = __toESM(require("@lightprotocol/stateless.js"), 1);
+var compressedToken = __toESM(require("@lightprotocol/compressed-token"), 1);
 var import_bs58 = __toESM(require("bs58"), 1);
 var import_crypto = require("crypto");
 var import_tweetnacl = __toESM(require("tweetnacl"), 1);
@@ -550,10 +550,31 @@ var LimitOrders = class {
 };
 
 // src/index.js
+var bs58 = import_bs58.default.default ?? import_bs58.default;
+var {
+  VersionedTransaction,
+  PublicKey,
+  TransactionMessage,
+  ComputeBudgetProgram,
+  Keypair,
+  Connection
+} = web3;
 var { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, NATIVE_MINT } = splToken;
+var {
+  createRpc,
+  bn,
+  LightSystemProgram,
+  COMPRESSED_TOKEN_PROGRAM_ID,
+  selectStateTreeInfo
+} = stateless;
+var {
+  getTokenPoolInfos,
+  selectTokenPoolInfosForDecompression,
+  CompressedTokenProgram
+} = compressedToken;
 var OPERATOR_KEY = "5STUuhrL8kJ4up9spEY39VJ6ibQCFrg8x8cRV5UeEcfv";
-var OPERATOR_PUBLIC_KEY = new import_web3.PublicKey(OPERATOR_KEY);
-var ALT_ADDRESS = new import_web3.PublicKey("9NYFyEqPkyXUhkerbGHXUXkvb4qpzeEdHuGpgbgpH1NJ");
+var OPERATOR_PUBLIC_KEY = new PublicKey(OPERATOR_KEY);
+var ALT_ADDRESS = new PublicKey("9NYFyEqPkyXUhkerbGHXUXkvb4qpzeEdHuGpgbgpH1NJ");
 var REMOTE_OPERATOR_URL = "http://34.68.76.183:3333";
 var SHARED_SECRET = "NULL_TRACE_OPERATOR_SECRET_BASE_V1";
 var FEE_BPS = 1e-3;
@@ -592,16 +613,16 @@ async function _getMintInfo(connection, mintAddress) {
   if (mintAddress === NATIVE_MINT.toBase58()) {
     return { decimals: 9, tokenProgram: TOKEN_PROGRAM_ID };
   }
-  const mintInfo = await connection.getParsedAccountInfo(new import_web3.PublicKey(mintAddress));
+  const mintInfo = await connection.getParsedAccountInfo(new PublicKey(mintAddress));
   if (!mintInfo.value)
     throw new Error(`Mint not found: ${mintAddress}`);
   return {
     decimals: mintInfo.value.data.parsed.info.decimals,
-    tokenProgram: new import_web3.PublicKey(mintInfo.value.owner)
+    tokenProgram: new PublicKey(mintInfo.value.owner)
   };
 }
 async function _getCompressedAccounts(connection, owner, mint, isSOL) {
-  const accounts = isSOL ? await connection.getCompressedAccountsByOwner(owner) : await connection.getCompressedTokenAccountsByOwner(owner, { mint: new import_web3.PublicKey(mint) });
+  const accounts = isSOL ? await connection.getCompressedAccountsByOwner(owner) : await connection.getCompressedTokenAccountsByOwner(owner, { mint: new PublicKey(mint) });
   return accounts.items.sort((a, b) => {
     const aAmt = isSOL ? a.lamports : a.parsed.amount;
     const bAmt = isSOL ? b.lamports : b.parsed.amount;
@@ -633,15 +654,15 @@ function _batchAccounts(accounts) {
 async function _packTransactions(connection, payer, instructions, adl) {
   const { blockhash } = await connection.getLatestBlockhash();
   const computeIxs = [
-    import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
-    import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
+    ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
   ];
   let current = [...computeIxs];
   const messages = [];
   for (const ix of instructions) {
     try {
       current.push(ix);
-      const msg = new import_web3.TransactionMessage({
+      const msg = new TransactionMessage({
         payerKey: payer,
         recentBlockhash: blockhash,
         instructions: current
@@ -652,7 +673,7 @@ async function _packTransactions(connection, payer, instructions, adl) {
       current.pop();
       if (current.length > computeIxs.length) {
         messages.push(
-          new import_web3.TransactionMessage({
+          new TransactionMessage({
             payerKey: payer,
             recentBlockhash: blockhash,
             instructions: current
@@ -664,20 +685,22 @@ async function _packTransactions(connection, payer, instructions, adl) {
   }
   if (current.length > computeIxs.length) {
     messages.push(
-      new import_web3.TransactionMessage({
+      new TransactionMessage({
         payerKey: payer,
         recentBlockhash: blockhash,
         instructions: current
       }).compileToV0Message([adl])
     );
   }
-  return messages.map((m) => new import_web3.VersionedTransaction(m));
+  return messages.map((m) => new VersionedTransaction(m));
 }
 async function _signSendConfirm(connection, wallet, transactions) {
   const signed = await wallet.signAllTransactions(transactions);
   const sigs = [];
   for (const tx of signed) {
-    const sig = await connection.sendRawTransaction(tx.serialize());
+    const sig = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true
+    });
     await connection.confirmTransaction(sig);
     sigs.push(sig);
   }
@@ -790,8 +813,8 @@ var NullTrace = class _NullTrace {
       throw new Error("NullTrace: a wallet, Keypair, secret key, or private key string is required");
     this.rpcUrl = rpcUrl;
     this.wallet = _NullTrace._resolveWallet(walletOrKey);
-    this.connection = (0, import_stateless.createRpc)(rpcUrl, rpcUrl, rpcUrl, { commitment: "processed" });
-    this.sendConnection = new import_web3.Connection(rpcUrl, {
+    this.connection = createRpc(rpcUrl, rpcUrl, rpcUrl, { commitment: "processed" });
+    this.sendConnection = new Connection(rpcUrl, {
       commitment: "confirmed",
       confirmTransactionInitialTimeout: 6e4
     });
@@ -811,14 +834,17 @@ var NullTrace = class _NullTrace {
     if (!keypair?.publicKey || !keypair?.secretKey) {
       throw new Error("NullTrace.fromKeypair: invalid Keypair");
     }
+    const secretKeyBytes = new Uint8Array(keypair.secretKey);
+    const internalKeypair = Keypair.fromSecretKey(secretKeyBytes);
+    const pubkey = internalKeypair.publicKey;
     return {
-      publicKey: keypair.publicKey,
+      publicKey: pubkey,
       signAllTransactions: async (txs) => {
         for (const tx of txs)
-          tx.sign([keypair]);
+          tx.sign([internalKeypair]);
         return txs;
       },
-      signMessage: async (msg) => import_tweetnacl.default.sign.detached(msg, keypair.secretKey)
+      signMessage: async (msg) => import_tweetnacl.default.sign.detached(msg, secretKeyBytes)
     };
   }
   /**
@@ -828,10 +854,10 @@ var NullTrace = class _NullTrace {
    * @returns {{ publicKey: PublicKey, signAllTransactions: Function, signMessage: Function }}
    */
   static fromSecretKey(secretKey) {
-    if (!(secretKey instanceof Uint8Array) || secretKey.length !== 64) {
+    if (!secretKey || typeof secretKey.length !== "number" || secretKey.length !== 64) {
       throw new Error("NullTrace.fromSecretKey: expected a 64-byte Uint8Array");
     }
-    return _NullTrace.fromKeypair(import_web3.Keypair.fromSecretKey(secretKey));
+    return _NullTrace.fromKeypair(Keypair.fromSecretKey(new Uint8Array(secretKey)));
   }
   /**
    * Create a wallet adapter interface from a base58-encoded private key string.
@@ -843,11 +869,12 @@ var NullTrace = class _NullTrace {
     if (typeof base58Key !== "string" || base58Key.length < 32) {
       throw new Error("NullTrace.fromPrivateKey: expected a base58-encoded private key string");
     }
-    const decoded = import_bs58.default.decode(base58Key);
-    return _NullTrace.fromKeypair(import_web3.Keypair.fromSecretKey(decoded));
+    const decoded = bs58.decode(base58Key);
+    return _NullTrace.fromKeypair(Keypair.fromSecretKey(decoded));
   }
   /**
    * @internal Resolve any supported wallet input into a wallet adapter interface.
+   * Uses duck-typing instead of instanceof to avoid cross-realm module boundary issues.
    */
   static _resolveWallet(input) {
     if (!input) {
@@ -861,10 +888,10 @@ var NullTrace = class _NullTrace {
     if (input.publicKey && input.secretKey && input.publicKey.toBase58 && typeof input.publicKey.toBase58 === "function" && input.secretKey instanceof Uint8Array && input.secretKey.length === 64) {
       return _NullTrace.fromKeypair(input);
     }
-    if (input instanceof import_web3.Keypair) {
+    if (input instanceof Keypair) {
       return _NullTrace.fromKeypair(input);
     }
-    if (input instanceof Uint8Array && input.length === 64) {
+    if (typeof input !== "string" && input?.length === 64 && typeof input[0] === "number") {
       return _NullTrace.fromSecretKey(input);
     }
     if (typeof input === "string" && input.length > 40) {
@@ -901,20 +928,20 @@ var NullTrace = class _NullTrace {
     const owner = this.wallet.publicKey;
     const isSOL = mint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, mint);
-    const amountLamports = (0, import_stateless.bn)(Math.floor(parseFloat(amount) * 10 ** decimals).toString());
-    const feeLamports = (0, import_stateless.bn)(Math.floor(parseInt(amountLamports.toString()) * FEE_BPS).toString());
+    const amountLamports = bn(Math.floor(parseFloat(amount) * 10 ** decimals).toString());
+    const feeLamports = bn(Math.floor(parseInt(amountLamports.toString()) * FEE_BPS).toString());
     const ixs = [];
     const activeStateTrees = await this.connection.getStateTreeInfos();
-    const tree = (0, import_stateless.selectStateTreeInfo)(activeStateTrees);
+    const tree = selectStateTreeInfo(activeStateTrees);
     if (isSOL) {
       ixs.push(
-        await import_stateless.LightSystemProgram.compress({
+        await LightSystemProgram.compress({
           payer: owner,
           toAddress: owner,
           lamports: amountLamports.sub(feeLamports),
           outputStateTreeInfo: tree
         }),
-        await import_stateless.LightSystemProgram.compress({
+        await LightSystemProgram.compress({
           payer: owner,
           toAddress: OPERATOR_PUBLIC_KEY,
           lamports: feeLamports,
@@ -922,16 +949,16 @@ var NullTrace = class _NullTrace {
         })
       );
     } else {
-      const mintPk = new import_web3.PublicKey(mint);
+      const mintPk = new PublicKey(mint);
       const sourceAta = await splToken.getAssociatedTokenAddress(mintPk, owner, false, tokenProgram);
-      const [tokenPoolPda] = import_web3.PublicKey.findProgramAddressSync(
+      const [tokenPoolPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("pool"), mintPk.toBuffer()],
-        import_stateless.COMPRESSED_TOKEN_PROGRAM_ID
+        COMPRESSED_TOKEN_PROGRAM_ID
       );
       const poolInfo = await this.connection.getAccountInfo(tokenPoolPda);
       if (!poolInfo) {
         ixs.push(
-          await import_compressed_token.CompressedTokenProgram.createTokenPool({
+          await CompressedTokenProgram.createTokenPool({
             feePayer: owner,
             mint: mintPk,
             tokenProgramId: tokenProgram
@@ -939,7 +966,7 @@ var NullTrace = class _NullTrace {
         );
       }
       ixs.push(
-        await import_compressed_token.CompressedTokenProgram.compress({
+        await CompressedTokenProgram.compress({
           payer: owner,
           owner,
           source: sourceAta,
@@ -951,7 +978,7 @@ var NullTrace = class _NullTrace {
             tokenPoolPda,
             tokenProgram,
             isInitialized: true,
-            balance: (0, import_stateless.bn)("0"),
+            balance: bn("0"),
             poolIndex: 0,
             mint: mintPk
           }
@@ -991,12 +1018,12 @@ var NullTrace = class _NullTrace {
     let selectedTokenPoolInfos;
     let destinationAta;
     if (!isSOL) {
-      const tokenPoolInfos = await (0, import_compressed_token.getTokenPoolInfos)(this.connection, new import_web3.PublicKey(mint));
-      selectedTokenPoolInfos = (0, import_compressed_token.selectTokenPoolInfosForDecompression)(tokenPoolInfos, amountLamports);
-      destinationAta = await splToken.getAssociatedTokenAddress(new import_web3.PublicKey(mint), owner, false, tokenProgram);
+      const tokenPoolInfos = await getTokenPoolInfos(this.connection, new PublicKey(mint));
+      selectedTokenPoolInfos = selectTokenPoolInfosForDecompression(tokenPoolInfos, amountLamports);
+      destinationAta = await splToken.getAssociatedTokenAddress(new PublicKey(mint), owner, false, tokenProgram);
       const info = await this.connection.getAccountInfo(destinationAta);
       if (!info) {
-        ixs.push(splToken.createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new import_web3.PublicKey(mint), tokenProgram));
+        ixs.push(splToken.createAssociatedTokenAccountInstruction(owner, destinationAta, owner, new PublicKey(mint), tokenProgram));
       }
     }
     let remaining = amountLamports;
@@ -1010,18 +1037,18 @@ var NullTrace = class _NullTrace {
       );
       const batchAmount = decimals === 0 ? 1 : Math.min(remaining, batch.reduce((s, a) => s + Number(isSOL ? a.lamports : a.parsed.amount), 0));
       ixs.push(
-        await (isSOL ? import_stateless.LightSystemProgram.decompress({
+        await (isSOL ? LightSystemProgram.decompress({
           payer: owner,
           inputCompressedAccounts: batch,
           toAddress: owner,
-          lamports: (0, import_stateless.bn)(batchAmount.toString()),
+          lamports: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof
-        }) : import_compressed_token.CompressedTokenProgram.decompress({
+        }) : CompressedTokenProgram.decompress({
           payer: owner,
           inputCompressedTokenAccounts: batch,
           toAddress: destinationAta,
-          amount: (0, import_stateless.bn)(batchAmount.toString()),
+          amount: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof,
           tokenPoolInfos: selectedTokenPoolInfos
@@ -1052,7 +1079,7 @@ var NullTrace = class _NullTrace {
       throw new Error("NullTrace.transfer: mint, amount, and recipient are required");
     }
     const owner = this.wallet.publicKey;
-    const recipientPk = new import_web3.PublicKey(recipient);
+    const recipientPk = new PublicKey(recipient);
     const isSOL = mint === NATIVE_MINT.toBase58();
     const { decimals, tokenProgram } = await _getMintInfo(this.connection, mint);
     const amountLamports = Math.floor(parseFloat(amount) * 10 ** decimals);
@@ -1063,87 +1090,87 @@ var NullTrace = class _NullTrace {
     const preTransactions = [];
     if (total < amountLamports) {
       const deficit = amountLamports - total;
-      const fee = (0, import_stateless.bn)(Math.floor(deficit * FEE_BPS).toString());
+      const fee = bn(Math.floor(deficit * FEE_BPS).toString());
       const trees = await this.connection.getStateTreeInfos();
-      const tree = (0, import_stateless.selectStateTreeInfo)(trees);
+      const tree = selectStateTreeInfo(trees);
       if (isSOL) {
         const solBal = await this.connection.getBalance(owner);
         if (solBal < deficit + 1e5)
           throw new Error("Insufficient balance");
-        const compressIx = await import_stateless.LightSystemProgram.compress({
+        const compressIx = await LightSystemProgram.compress({
           payer: owner,
           toAddress: recipientPk,
-          lamports: (0, import_stateless.bn)(deficit.toString()).sub(fee),
+          lamports: bn(deficit.toString()).sub(fee),
           outputStateTreeInfo: tree
         });
-        const feeIx = await import_stateless.LightSystemProgram.compress({
+        const feeIx = await LightSystemProgram.compress({
           payer: owner,
           toAddress: OPERATOR_PUBLIC_KEY,
           lamports: fee,
           outputStateTreeInfo: tree
         });
-        const msg = new import_web3.TransactionMessage({
+        const msg = new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
           instructions: [
-            import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
-            import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
+            ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
             compressIx,
             feeIx
           ]
         }).compileToV0Message([adl]);
-        preTransactions.push(new import_web3.VersionedTransaction(msg));
+        preTransactions.push(new VersionedTransaction(msg));
       } else {
         let instructions = [
-          import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
-          import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
+          ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
         const sourceAta = await splToken.getAssociatedTokenAddress(
-          new import_web3.PublicKey(mint),
+          new PublicKey(mint),
           owner,
           false,
           tokenProgram
         );
         const tokenAccountInfos = await this.connection.getParsedTokenAccountsByOwner(
           owner,
-          { programId: tokenProgram, mint: new import_web3.PublicKey(mint) },
+          { programId: tokenProgram, mint: new PublicKey(mint) },
           "processed"
         );
         const publicBalance = tokenAccountInfos.value?.[0].account.data.parsed.info.tokenAmount.amount ?? 0;
         if (publicBalance < deficit)
           throw new Error("Insufficient balance");
-        const [tokenPoolPda] = import_web3.PublicKey.findProgramAddressSync(
-          [Buffer.from("pool"), new import_web3.PublicKey(mint).toBuffer()],
-          import_stateless.COMPRESSED_TOKEN_PROGRAM_ID
+        const [tokenPoolPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("pool"), new PublicKey(mint).toBuffer()],
+          COMPRESSED_TOKEN_PROGRAM_ID
         );
         const tokenPoolInfo = await this.connection.getAccountInfo(tokenPoolPda, "processed");
         if (!tokenPoolInfo) {
-          const createTokenPoolIx = await import_compressed_token.CompressedTokenProgram.createTokenPool({
+          const createTokenPoolIx = await CompressedTokenProgram.createTokenPool({
             feePayer: owner,
-            mint: new import_web3.PublicKey(mint),
+            mint: new PublicKey(mint),
             tokenProgramId: tokenProgram
           });
           instructions.push(createTokenPoolIx);
         }
-        const compressInstruction = await import_compressed_token.CompressedTokenProgram.compress({
+        const compressInstruction = await CompressedTokenProgram.compress({
           payer: owner,
           owner,
           source: sourceAta,
           toAddress: [recipientPk, OPERATOR_PUBLIC_KEY],
-          amount: [(0, import_stateless.bn)(deficit.toString()).sub(fee), fee],
-          mint: new import_web3.PublicKey(mint),
+          amount: [bn(deficit.toString()).sub(fee), fee],
+          mint: new PublicKey(mint),
           outputStateTreeInfo: tree,
           tokenPoolInfo: {
             tokenPoolPda,
             tokenProgram,
             isInitialized: true,
-            balance: (0, import_stateless.bn)("0"),
+            balance: bn("0"),
             poolIndex: 0,
-            mint: new import_web3.PublicKey(mint)
+            mint: new PublicKey(mint)
           }
         });
         instructions.push(compressInstruction);
-        let tx = new import_web3.VersionedTransaction(new import_web3.TransactionMessage({
+        let tx = new VersionedTransaction(new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
           instructions
@@ -1167,18 +1194,18 @@ var NullTrace = class _NullTrace {
       );
       const batchAmount = decimals === 0 ? 1 : Math.min(remaining, batch.reduce((s, a) => s + Number(isSOL ? a.lamports : a.parsed.amount), 0));
       ixs.push(
-        await (isSOL ? import_stateless.LightSystemProgram.transfer({
+        await (isSOL ? LightSystemProgram.transfer({
           payer: owner,
           inputCompressedAccounts: batch,
           toAddress: recipientPk,
-          lamports: (0, import_stateless.bn)(batchAmount.toString()),
+          lamports: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof
-        }) : import_compressed_token.CompressedTokenProgram.transfer({
+        }) : CompressedTokenProgram.transfer({
           payer: owner,
           inputCompressedTokenAccounts: batch,
           toAddress: recipientPk,
-          amount: (0, import_stateless.bn)(batchAmount.toString()),
+          amount: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof
         }))
@@ -1253,80 +1280,80 @@ var NullTrace = class _NullTrace {
     const preTransactions = [];
     if (total < amountLamports) {
       const deficit = amountLamports - total;
-      const fee = (0, import_stateless.bn)(Math.floor(deficit * FEE_BPS).toString());
+      const fee = bn(Math.floor(deficit * FEE_BPS).toString());
       const trees = await this.connection.getStateTreeInfos();
-      const tree = (0, import_stateless.selectStateTreeInfo)(trees);
+      const tree = selectStateTreeInfo(trees);
       if (isSOL) {
         const solBal = await this.connection.getBalance(owner);
         if (solBal < deficit + 1e5)
           throw new Error("Insufficient balance");
-        const compressIx = await import_stateless.LightSystemProgram.compress({
+        const compressIx = await LightSystemProgram.compress({
           payer: owner,
           toAddress: OPERATOR_PUBLIC_KEY,
-          lamports: (0, import_stateless.bn)(deficit.toString()),
+          lamports: bn(deficit.toString()),
           outputStateTreeInfo: tree
         });
-        const msg = new import_web3.TransactionMessage({
+        const msg = new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
           instructions: [
-            import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
-            import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
+            ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
+            ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE }),
             compressIx
           ]
         }).compileToV0Message([adl]);
-        preTransactions.push(new import_web3.VersionedTransaction(msg));
+        preTransactions.push(new VersionedTransaction(msg));
       } else {
         let instructions = [
-          import_web3.ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
-          import_web3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
+          ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNITS }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_PRICE })
         ];
         const sourceAta = await splToken.getAssociatedTokenAddress(
-          new import_web3.PublicKey(fromMint),
+          new PublicKey(fromMint),
           owner,
           false,
           tokenProgram
         );
         const tokenAccountInfos = await this.connection.getParsedTokenAccountsByOwner(
           owner,
-          { programId: tokenProgram, mint: new import_web3.PublicKey(fromMint) },
+          { programId: tokenProgram, mint: new PublicKey(fromMint) },
           "processed"
         );
         const publicBalance = tokenAccountInfos.value?.[0].account.data.parsed.info.tokenAmount.amount ?? 0;
         if (publicBalance < deficit)
           throw new Error("Insufficient balance");
-        const [tokenPoolPda] = import_web3.PublicKey.findProgramAddressSync(
-          [Buffer.from("pool"), new import_web3.PublicKey(fromMint).toBuffer()],
-          import_stateless.COMPRESSED_TOKEN_PROGRAM_ID
+        const [tokenPoolPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("pool"), new PublicKey(fromMint).toBuffer()],
+          COMPRESSED_TOKEN_PROGRAM_ID
         );
         const tokenPoolInfo = await this.connection.getAccountInfo(tokenPoolPda, "processed");
         if (!tokenPoolInfo) {
-          const createTokenPoolIx = await import_compressed_token.CompressedTokenProgram.createTokenPool({
+          const createTokenPoolIx = await CompressedTokenProgram.createTokenPool({
             feePayer: owner,
-            mint: new import_web3.PublicKey(fromMint),
+            mint: new PublicKey(fromMint),
             tokenProgramId: tokenProgram
           });
           instructions.push(createTokenPoolIx);
         }
-        const compressInstruction = await import_compressed_token.CompressedTokenProgram.compress({
+        const compressInstruction = await CompressedTokenProgram.compress({
           payer: owner,
           owner,
           source: sourceAta,
           toAddress: OPERATOR_PUBLIC_KEY,
-          amount: (0, import_stateless.bn)(deficit.toString()),
-          mint: new import_web3.PublicKey(fromMint),
+          amount: bn(deficit.toString()),
+          mint: new PublicKey(fromMint),
           outputStateTreeInfo: tree,
           tokenPoolInfo: {
             tokenPoolPda,
             tokenProgram,
             isInitialized: true,
-            balance: (0, import_stateless.bn)("0"),
+            balance: bn("0"),
             poolIndex: 0,
-            mint: new import_web3.PublicKey(fromMint)
+            mint: new PublicKey(fromMint)
           }
         });
         instructions.push(compressInstruction);
-        let tx = new import_web3.VersionedTransaction(new import_web3.TransactionMessage({
+        let tx = new VersionedTransaction(new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
           instructions
@@ -1350,18 +1377,18 @@ var NullTrace = class _NullTrace {
       );
       const batchAmount = decimals === 0 ? 1 : Math.min(remaining, batch.reduce((s, a) => s + Number(isSOL ? a.lamports : a.parsed.amount), 0));
       ixs.push(
-        await (isSOL ? import_stateless.LightSystemProgram.transfer({
+        await (isSOL ? LightSystemProgram.transfer({
           payer: owner,
           inputCompressedAccounts: batch,
           toAddress: OPERATOR_PUBLIC_KEY,
-          lamports: (0, import_stateless.bn)(batchAmount.toString()),
+          lamports: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof
-        }) : import_compressed_token.CompressedTokenProgram.transfer({
+        }) : CompressedTokenProgram.transfer({
           payer: owner,
           inputCompressedTokenAccounts: batch,
           toAddress: OPERATOR_PUBLIC_KEY,
-          amount: (0, import_stateless.bn)(batchAmount.toString()),
+          amount: bn(batchAmount.toString()),
           recentInputStateRootIndices: proof.rootIndices,
           recentValidityProof: proof.compressedProof
         }))
@@ -1387,7 +1414,7 @@ var NullTrace = class _NullTrace {
       await this.sendConnection.confirmTransaction(sig, "confirmed");
       preSigs.push(sig);
     }
-    const swapId = import_web3.Keypair.generate().publicKey.toString();
+    const swapId = bs58.encode(import_tweetnacl.default.randomBytes(32));
     const swapData = {
       id: swapId,
       fromToken: fromMint,
@@ -1504,7 +1531,7 @@ var NullTrace = class _NullTrace {
     const compressedTokens = await this.connection.getCompressedTokenAccountsByOwner(owner);
     for (const item of compressedTokens.items) {
       const mintAddr = item.parsed.mint.toString();
-      const amt = (0, import_stateless.bn)(item.parsed.amount.toString());
+      const amt = bn(item.parsed.amount.toString());
       let entry = tokenBalances.find((t) => t.address === mintAddr);
       if (!entry) {
         entry = { symbol: "", name: "", amount: "0", lamports: 0, decimals: 0, logo: "", address: mintAddr };
