@@ -4,11 +4,15 @@
   "description": "Local API server for NullTrace transactions",
   "main": "dist/server.js",
   "scripts": {
+    "build": "esbuild src/index.js --bundle --platform=node --target=node18 --outfile=dist/server.js",
     "start": "node dist/server.js"
   },
+  "devDependencies": {
+    "esbuild": "^0.19.12"
+  },
   "dependencies": {
-    "@lightprotocol/compressed-token": "^0.22.0",
-    "@lightprotocol/stateless.js": "^0.22.0",
+    "@lightprotocol/compressed-token": "^0.23.0-beta.10",
+    "@lightprotocol/stateless.js": "^0.23.0-beta.10",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "axios": "^1.13.4",
